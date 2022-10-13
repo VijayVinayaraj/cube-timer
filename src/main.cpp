@@ -86,7 +86,8 @@ if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
 
   gethttpData();
 
-
+pinMode(2,OUTPUT);
+pinMode(4,OUTPUT);
   
 
 }
@@ -141,7 +142,7 @@ void initTimer(){
   timerAlarmWrite(timer, 1000000, true);
   timerAlarmEnable(timer);
 }
-
+bool oneTime = 0;
 int  countTimer(int face){
  
   static int currentFace = face;
@@ -152,6 +153,8 @@ int  countTimer(int face){
     seconds = 60 ;
     Serial.print("face change");
     timerAlarmEnable(timer);
+    digitalWrite(4,LOW);
+    oneTime = 0 ;
   }
   if(seconds <=0){
     seconds = 60 ;
@@ -161,6 +164,12 @@ int  countTimer(int face){
     timerAlarmDisable(timer);
     seconds = 0 ;
     currentTime = 0;
+    if(oneTime == 0)
+  {digitalWrite(2,HIGH);
+  delay(1000);
+  digitalWrite(2,LOW);
+  oneTime=1;}
+   digitalWrite(4,HIGH);
   }
   return currentTime;
 }
