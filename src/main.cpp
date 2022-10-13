@@ -2,17 +2,58 @@
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
 #include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include <WiFi.h>
+#include <AsyncTCP.h>
+#include <string.h>
+#include <ESPAsyncWebServer.h>
+#include<sstream>
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+hw_timer_t * timer = NULL;
 Adafruit_MPU6050 mpu;
-const char *ssid =  "Koko";     // Enter your WiFi Name
-const char *pass =  "qwerty123"; // Enter your WiFi Password
-WiFiServer server(80);
+const char *ssid =  "Farhana";     // Enter your WiFi Name
+const char *pass =  "1234567890"; // Enter your WiFi Password
+AsyncWebServer server(80);
+int determineFace(sensors_event_t a);
+int setTime(int face);
+void displayTimer(int );
+void initTimer();
+int countTimer(int face);
+void gethttpData();
+int face0Time = 25;
+int face1Time = 20;
+int face2Time= 5;
+int face3Time = 10 ;
+
+const char* PARAM_INPUT_1 = "input1";
+const char* PARAM_INPUT_2 = "input2";
+const char* PARAM_INPUT_3 = "input3";
+const char* PARAM_INPUT_4 = "input4";
+volatile int seconds = 60 ;
+portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 void setup(void) {
+    initTimer();
+  
+
+
+
   Serial.begin(115200);
   while (!Serial)
     delay(10); // will pause Zero, Leonardo, etc until serial console opens
 
   Serial.println("Adafruit MPU6050 test!");
+if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { 
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
 
   // Try to initialize!
   if (!mpu.begin()) {
@@ -21,67 +62,13 @@ void setup(void) {
       delay(10);
     }
   }
+
   Serial.println("MPU6050 Found!");
 
   mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-  Serial.print("Accelerometer range set to: ");
-  switch (mpu.getAccelerometerRange()) {
-  case MPU6050_RANGE_2_G:
-    Serial.println("+-2G");
-    break;
-  case MPU6050_RANGE_4_G:
-    Serial.println("+-4G");
-    break;
-  case MPU6050_RANGE_8_G:
-    Serial.println("+-8G");
-    break;
-  case MPU6050_RANGE_16_G:
-    Serial.println("+-16G");
-    break;
-  }
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  Serial.print("Gyro range set to: ");
-  switch (mpu.getGyroRange()) {
-  case MPU6050_RANGE_250_DEG:
-    Serial.println("+- 250 deg/s");
-    break;
-  case MPU6050_RANGE_500_DEG:
-    Serial.println("+- 500 deg/s");
-    break;
-  case MPU6050_RANGE_1000_DEG:
-    Serial.println("+- 1000 deg/s");
-    break;
-  case MPU6050_RANGE_2000_DEG:
-    Serial.println("+- 2000 deg/s");
-    break;
-  }
-
+  
   mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
-  Serial.print("Filter bandwidth set to: ");
-  switch (mpu.getFilterBandwidth()) {
-  case MPU6050_BAND_260_HZ:
-    Serial.println("260 Hz");
-    break;
-  case MPU6050_BAND_184_HZ:
-    Serial.println("184 Hz");
-    break;
-  case MPU6050_BAND_94_HZ:
-    Serial.println("94 Hz");
-    break;
-  case MPU6050_BAND_44_HZ:
-    Serial.println("44 Hz");
-    break;
-  case MPU6050_BAND_21_HZ:
-    Serial.println("21 Hz");
-    break;
-  case MPU6050_BAND_10_HZ:
-    Serial.println("10 Hz");
-    break;
-  case MPU6050_BAND_5_HZ:
-    Serial.println("5 Hz");
-    break;
-  }
-
   Serial.println("");
     delay(100);
   WiFi.begin(ssid, pass);
@@ -97,85 +84,179 @@ void setup(void) {
   server.begin();
   Serial.println("Server started");
 
+  gethttpData();
+
+
+  
 
 }
+
 
 void loop() {
   /* Get new sensor events with the readings */
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
 
-WiFiClient client = server.available();
- if (client) 
-  {                             
-    Serial.println("new client");          
-    String currentLine = "";                   //Storing the incoming data in the string
-    while (client.connected()) 
-    {            
-      if (client.available())                  //if there is some client data available
-      {                
-        char c = client.read();                // read a byte
-          if (c == '\n')                       // check for newline character, 
-          {                     
-          if (currentLine.length() == 0)      //if line is blank it means its the end of the client HTTP request
-          {     
-            client.print("<html><title> ESP32 WebServer</title></html>");
-            client.print("<body bgcolor=\"#E6E6FA\"><h1 style=\"text-align: center; color: blue\"> ESP32 WebServer </h1>");
-            client.print("<p style=\"text-align: left; color: red; font-size:150% \">Accelerometer Values: ");
-            client.print("<p style=\"text-align: left; font-size:150% \">AcX: ");
-            client.print(a.acceleration.x);
-            client.print("<br/>AcY: ");
-            client.print(a.acceleration.y);
-            client.print("<br/>AcZ: ");
-            client.print(a.acceleration.z);
-            client.print("<p style=\"text-align: left; color: red; font-size:150% \">Gyroscope Values: ");
-            client.print("<p style=\"text-align: left; font-size:150% \">GyX: ");
-            client.print(g.acceleration.x);
-            client.print("<br/>GyY: ");
-            client.print(g.acceleration.y);
-            client.print("<br/>GyZ: ");
-            client.print(g.acceleration.z);
-            client.print("</p></body>");        
-            break;  // break out of the while loop:
-          } 
-           else 
-          {    // if you got a newline, then clear currentLine:
-            currentLine = "";
-          }
-         } 
-         else if (c != '\r') 
-         {  // if you got anything else but a carriage return character,
-          currentLine += c;       // add it to the end of the currentLine
-         }
-        }
-      }
-  }
 
 
+ int face = determineFace(a);
 
+  displayTimer(countTimer(face));
+  
 
-
-  // /* Print out the values */
-  // Serial.print("Acceleration X: ");
-  // Serial.print(a.acceleration.x);
-  // Serial.print(", Y: ");
-  // Serial.print(a.acceleration.y);
-  // Serial.print(", Z: ");
-  // Serial.print(a.acceleration.z);
-  // Serial.println(" m/s^2");
-
-  // Serial.print("Rotation X: ");
-  // Serial.print(g.gyro.x);
-  // Serial.print(", Y: ");
-  // Serial.print(g.gyro.y);
-  // Serial.print(", Z: ");
-  // Serial.print(g.gyro.z);
-  // Serial.println(" rad/s");
-
-  // Serial.print("Temperature: ");
-  // Serial.print(temp.temperature);
-  // Serial.println(" degC");
-
-  Serial.println("");
   delay(500);
+}
+
+int determineFace(sensors_event_t a){
+ if(a.acceleration.y < -5 ) return 1;
+if(a.acceleration.y > 5) return 2;
+if ((a.acceleration.y > -5 && a.acceleration.y < 5 ) && a.acceleration.z <-5) return 3;
+ if(a.acceleration.y > -5 && a.acceleration.y < 5  )return 0 ;
+else return 4 ;
+
+}
+
+
+
+
+int setTime(int face){
+  if (face == 0 ) return face0Time;
+  else if (face == 1) return face1Time;
+  else if (face == 2 ) return face2Time; 
+  else if (face == 3 ) return face3Time;
+  
+  else return 70 ;
+
+}
+
+void IRAM_ATTR onTimer() {
+  portENTER_CRITICAL_ISR(&timerMux);
+  seconds--;
+  portEXIT_CRITICAL_ISR(&timerMux);
+ 
+}
+void initTimer(){
+  timer = timerBegin(0, 80, true);
+  timerAttachInterrupt(timer, &onTimer, true);
+  timerAlarmWrite(timer, 1000000, true);
+  timerAlarmEnable(timer);
+}
+
+int  countTimer(int face){
+ 
+  static int currentFace = face;
+  static int currentTime = setTime(currentFace);
+  if (face !=currentFace ){
+    currentFace = face ;
+    currentTime = setTime(currentFace);
+    seconds = 60 ;
+    Serial.print("face change");
+    timerAlarmEnable(timer);
+  }
+  if(seconds <=0){
+    seconds = 60 ;
+    currentTime-- ;
+  }
+  if(currentTime == -1 ){
+    timerAlarmDisable(timer);
+    seconds = 0 ;
+    currentTime = 0;
+  }
+  return currentTime;
+}
+
+void displayTimer(int minutes){
+  
+display.clearDisplay();
+ display.setTextSize(4);
+ display.setCursor(0,2);
+ display.setTextColor(WHITE);
+ display.print(minutes);
+ display.print(":");
+ display.print(seconds);
+ if (millis() <= 10000) {display.setCursor(0,50);
+ display.setTextSize(1);
+ display.print(WiFi.localIP());}
+ display.display();
+
+
+
+
+}
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html><head>
+  <title>ESP Input Form</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  </head><body>
+  <h2>value should not be more than 60 minutes</h2>
+  <form action="/get">
+    top face: <input type="number" name="input1">
+    <input type="submit" value="Submit">
+  </form><br>
+  <form action="/get">
+    right face: <input type="number" name="input2">
+    <input type="submit" value="Submit">
+  </form><br>
+  <form action="/get">
+    left face: <input type="number" name="input3">
+    <input type="submit" value="Submit">
+  </form><br>
+  <form action="/get">
+    bottom face: <input type="number" name="input4">
+    <input type="submit" value="Submit">
+  </form>
+</body></html>)rawliteral";
+
+void notFound(AsyncWebServerRequest *request) {
+  request->send(404, "text/plain", "Not found");
+}
+
+void gethttpData(){
+  
+
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html);
+  });
+
+  // Send a GET request to <ESP_IP>/get?input1=<inputMessage>
+  server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    String inputMessage;
+    String inputParam;
+    // GET input1 value on <ESP_IP>/get?input1=<inputMessage>
+    if (request->hasParam(PARAM_INPUT_1)) {
+      inputMessage = request->getParam(PARAM_INPUT_1)->value();
+      face0Time = inputMessage.toInt();
+      inputParam = PARAM_INPUT_1;
+
+    }
+    // GET input2 value on <ESP_IP>/get?input2=<inputMessage>
+    else if (request->hasParam(PARAM_INPUT_2)) {
+      inputMessage = request->getParam(PARAM_INPUT_2)->value();
+      inputParam = PARAM_INPUT_2;
+      face1Time = inputMessage.toInt();
+    }
+    // GET input3 value on <ESP_IP>/get?input3=<inputMessage>
+    else if (request->hasParam(PARAM_INPUT_3)) {
+      inputMessage = request->getParam(PARAM_INPUT_3)->value();
+      inputParam = PARAM_INPUT_3;
+      face2Time = inputMessage.toInt();
+    }else if (request->hasParam(PARAM_INPUT_4)) {
+      inputMessage = request->getParam(PARAM_INPUT_4)->value();
+      inputParam = PARAM_INPUT_4;
+      face3Time = inputMessage.toInt();
+    }
+    else {
+      inputMessage = "No message sent";
+      inputParam = "none";
+    }
+    
+    int value = inputMessage.toInt();
+    Serial.println(value);
+    request->send(200, "text/html", "HTTP GET request sent to your ESP on input field (" 
+                                     + inputParam + ") with value: " + inputMessage +
+                                     "<br><a href=\"/\">Return to Home Page</a>");
+  });
+  server.onNotFound(notFound);
+  server.begin();
+  
 }
